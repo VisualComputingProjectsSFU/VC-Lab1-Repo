@@ -2,6 +2,7 @@ import os
 import random
 import torch.utils.data
 import dataset
+import matplotlib.pyplot as plt
 
 
 lfw_dataset_path = 'lfw'
@@ -57,3 +58,5 @@ if __name__ == '__main__':
     print('Total validation set:', len(valid_set))
 
     train_dataset.preview()
+
+    plt.show()

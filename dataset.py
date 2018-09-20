@@ -98,6 +98,7 @@ class AlexNetDataset(Dataset):
         h, w = image.shape[1], image.shape[2]
 
         nd_img = image.cpu().numpy()
+        plt.figure(num='Preview')
         plt.imshow(nd_img.reshape(h, w, channels))
 
         if is_landmarks_displayed:
@@ -105,4 +106,7 @@ class AlexNetDataset(Dataset):
             for i in range(0, len(nd_landmarks)):
                 plt.plot(nd_landmarks[i][0], nd_landmarks[i][1:], 'bo')
 
-        plt.show()
+        plt.xlim(0, 225)
+        plt.ylim(225, 0)
+        plt.title('Preview at Index [' + str(idx) + ']')
+        plt.draw()
