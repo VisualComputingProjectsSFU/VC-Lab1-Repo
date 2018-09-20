@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 class AlexNetDataset(Dataset):
     img_w, img_h = 225, 225
     dir_name_trim_length = -9
+    random_crop_ratio = 0.2
 
     def __init__(self, data_list):
         self.data_list = data_list
@@ -23,11 +24,25 @@ class AlexNetDataset(Dataset):
         item = self.data_list[idx]
 
         file_name = item['file_path']
+        self.augmentation = item['augmentation']
         self.file_path = os.path.join(main.lfw_dataset_path, file_name[:self.dir_name_trim_length], file_name)
         self.crops = item['crops'].split(' ')
         self.crops = list(map(float, self.crops))
         self.landmarks = item['landmarks'].split(' ')
         self.landmarks = list(map(float, self.landmarks))
+
+        # Process random cropping.
+        if self.augmentation[1] == '1':
+            shift_coordinates = np.array([0.0, 0.0])
+            shift = (self.crops[2] - self.crops[0]) * self.random_crop_ratio
+            shift = random.uniform(0, shift)
+            shift *= [-1, 1][random.randrange(2)]
+            shift_coordinates[0] = shift
+            shift = (self.crops[2] - self.crops[0]) * self.random_crop_ratio
+            shift = random.uniform(0, shift)
+            shift *= [-1, 1][random.randrange(2)]
+            shift_coordinates[1] = shift
+            self.crops += np.tile(shift_coordinates, int(len(self.crops) / 2))
 
         # Prepare image tensor.
         img_tensor = Image.open(self.file_path)
@@ -89,8 +104,9 @@ class AlexNetDataset(Dataset):
         if idx == -1:
             idx = random.randint(0, len(self))
 
-        image = self[idx][0]
-        landmarks = self[idx][1]
+        target = self[idx]
+        image = target[0]
+        landmarks = target[1]
         print('Image tensor shape (C, H, W):', image.shape)
         print('Label tensor shape (X, Y):', landmarks.shape)
 

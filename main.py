@@ -22,7 +22,8 @@ if __name__ == '__main__':
                 file_path = tokens[0]
                 crops = ' '.join(tokens[1].split())
                 landmarks = ' '.join(tokens[2].split())
-                training_validation_data_list.append({'file_path': file_path, 'crops': crops, 'landmarks': landmarks})
+                training_validation_data_list.append(
+                    {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'augmentation': '111'})
 
     # Read testing data.
     with open(test_landmark_path, "r") as file:
@@ -32,7 +33,8 @@ if __name__ == '__main__':
                 file_path = tokens[0]
                 crops = tokens[1]
                 landmarks = ' '.join(tokens[2].split())
-                testing_data_list.append({'file_path': file_path, 'crops': crops, 'landmarks': landmarks})
+                testing_data_list.append(
+                    {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'augmentation': '111'})
 
     random.shuffle(training_validation_data_list)
     random.shuffle(testing_data_list)
