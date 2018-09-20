@@ -2,7 +2,6 @@ import os
 import random
 import torch.utils.data
 import dataset
-import matplotlib.pyplot as plt
 
 
 lfw_dataset_path = 'lfw'
@@ -57,26 +56,4 @@ if __name__ == '__main__':
     valid_data_loader = torch.utils.data.DataLoader(valid_set, batch_size=32, shuffle=True, num_workers=6)
     print('Total validation set:', len(valid_set))
 
-    '''
-        Preview random cropped images.
-    '''
-    idx, (image, landmarks) = next(enumerate(train_data_loader))
-    print('Image tensor shape (N, C, H, W):', image.shape)
-    print('Label tensor shape (N, X, Y):', landmarks.shape)
-
-    n_batch_size = image.shape[0]
-    channels = image.shape[1]
-    h, w = image.shape[2], image.shape[3]
-
-    nd_img = image.cpu().numpy()
-    nd_landmarks = landmarks.cpu().numpy()
-
-    plt.imshow(nd_img[0].reshape(h, w, 3))
-    plt.plot(nd_landmarks[0][0][0], nd_landmarks[0][0][1], 'bo')
-    plt.plot(nd_landmarks[0][1][0], nd_landmarks[0][1][1], 'bo')
-    plt.plot(nd_landmarks[0][2][0], nd_landmarks[0][2][1], 'bo')
-    plt.plot(nd_landmarks[0][3][0], nd_landmarks[0][3][1], 'bo')
-    plt.plot(nd_landmarks[0][4][0], nd_landmarks[0][4][1], 'bo')
-    plt.plot(nd_landmarks[0][5][0], nd_landmarks[0][5][1], 'bo')
-    plt.plot(nd_landmarks[0][6][0], nd_landmarks[0][6][1], 'bo')
-    plt.show()
+    train_dataset.preview()

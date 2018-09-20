@@ -1,10 +1,12 @@
 import torch
 import numpy as np
 import os
+import random
 import main
 from torch.utils.data import Dataset
 import PIL
 from PIL import Image
+import matplotlib.pyplot as plt
 
 
 class AlexNetDataset(Dataset):
@@ -82,3 +84,25 @@ class AlexNetDataset(Dataset):
     def normalize(cropped_img):
         img = cropped_img
         return img
+
+    def preview(self, idx=-1, is_landmarks_displayed=True):
+        if idx == -1:
+            idx = random.randint(0, len(self))
+
+        image = self[idx][0]
+        landmarks = self[idx][1]
+        print('Image tensor shape (C, H, W):', image.shape)
+        print('Label tensor shape (X, Y):', landmarks.shape)
+
+        channels = image.shape[0]
+        h, w = image.shape[1], image.shape[2]
+
+        nd_img = image.cpu().numpy()
+        plt.imshow(nd_img.reshape(h, w, channels))
+
+        if is_landmarks_displayed:
+            nd_landmarks = landmarks.cpu().numpy()
+            for i in range(0, len(nd_landmarks)):
+                plt.plot(nd_landmarks[i][0], nd_landmarks[i][1:], 'bo')
+
+        plt.show()
