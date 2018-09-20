@@ -27,8 +27,8 @@ with open(lfw_train_annotation_file,"r") as f:
         features = tokens[2].split()
         train_data_list.append({'file_path': image_file_path,'border box coordinates':bbox_coor,'landmark features coordinates':features})
 
-
-
+print (train_data_list)
+'''
 class LFWDataset (Dataset)
     def __init__(self, data_list):
         """ Initialization: load the dataset list
@@ -53,7 +53,7 @@ class LFWDataset (Dataset)
         cropped_img = scaled_img.crop((features[0],features[1],features[2],features[3]))
 
         h,w = cropped_img.shape[0],cropped_img.shape[1]
-
+'''
 
 
 
