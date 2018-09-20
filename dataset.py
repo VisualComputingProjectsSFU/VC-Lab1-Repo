@@ -23,7 +23,9 @@ class AlexNetDataset(Dataset):
         file_name = item['file_path']
         self.file_path = os.path.join(main.lfw_dataset_path, file_name[:self.dir_name_trim_length], file_name)
         self.crops = item['crops'].split(' ')
+        self.crops = list(map(float, self.crops))
         self.landmarks = item['landmarks'].split(' ')
+        self.landmarks = list(map(float, self.landmarks))
 
         # Prepare image tensor.
         img_tensor = Image.open(self.file_path)
@@ -33,7 +35,7 @@ class AlexNetDataset(Dataset):
         img_tensor = self.normalize(img_tensor)
 
         # Prepare landmark tensor.
-        landmarks = np.asarray(list(map(float, self.landmarks)))
+        landmarks = np.asarray(self.landmarks)
         landmarks = landmarks.reshape(7, 2)
         landmarks = self.crop(landmarks)
         landmark_tensors = torch.from_numpy(landmarks)
@@ -45,7 +47,7 @@ class AlexNetDataset(Dataset):
         # Case that a image need to be cropped.
         if isinstance(_input, PIL.JpegImagePlugin.JpegImageFile):
             img = _input
-            img = img.crop(list(map(int, self.crops)))
+            img = img.crop(self.crops)
             img = img.resize((self.img_w, self.img_h), PIL.Image.ANTIALIAS)
             img = np.asarray(img)
 
@@ -63,8 +65,8 @@ class AlexNetDataset(Dataset):
         landmarks = _input
         shift = np.array([[self.crops[0], self.crops[1]]])
         shift = np.repeat(shift, 7, axis=0)
-        ratio = float(self.img_w) / (float(self.crops[2]) - float(self.crops[0]))
-        return np.subtract(landmarks.astype(float), shift.astype(float)) * ratio
+        ratio = float(self.img_w) / (self.crops[2] - self.crops[0])
+        return np.subtract(landmarks, shift) * ratio
 
     @staticmethod
     def flip(cropped_img):
