@@ -2,12 +2,12 @@ import torch
 import numpy as np
 import os
 import random
-import main
 from torch.utils.data import Dataset
 import PIL
 import PIL.JpegImagePlugin
 from PIL import Image
 import matplotlib.pyplot as plt
+import main
 
 
 class AlexNetDataset(Dataset):
