@@ -40,15 +40,15 @@ if __name__ == '__main__':
     random.shuffle(testing_data_list)
     total_training_validation_items = len(training_validation_data_list)
 
-    # Training dataset
+    # Training dataset.
     n_train_sets = training_ratio * total_training_validation_items
     train_set_list = training_validation_data_list[: int(n_train_sets)]
 
-    # Validation dataset
+    # Validation dataset.
     n_valid_sets = (1 - training_ratio) * total_training_validation_items
     valid_set_list = training_validation_data_list[int(n_train_sets): int(n_train_sets + n_valid_sets)]
 
-    # Testing dataset
+    # Testing dataset.
     test_set_list = testing_data_list
 
     train_dataset = dataset.AlexNetDataset(train_set_list)
