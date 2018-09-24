@@ -9,7 +9,19 @@ from random import randint
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
+import torch.multiprocessing as mp
 
+# make a data set . extract file paths and landmark feature cordonates from LFW train annotations
+train_data_list = []
+lfw_dataset_path = '/home/vramiyas/PycharmProjects/Project 1/lfw'
+test_landmark_path = os.path.join(lfw_dataset_path, 'LFW_annotation_test.txt')
+train_landmark_path = os.path.join(lfw_dataset_path, 'LFW_annotation_train.txt')
+training_ratio = 0.8
+aug_types = ['001', '010', '100', '011', '101', '110', '111']  # nnn - random crop , flip,brightness
+
+training_validation_data_list = []
+testing_data_list = []
+learning_rate = 0.005
 
 # Set default tenosr type, 'torch.cuda.FloatTensor' is the GPU based FloatTensor
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -22,7 +34,6 @@ model_urls = {
 
 
 class AlexNet(nn.Module):
-
     def __init__(self, num_classes=1000):
         super(AlexNet, self).__init__()
         self.features = nn.Sequential(
@@ -68,8 +79,8 @@ def alexnet(pretrained=False, **kwargs):
         model.load_state_dict(model_zoo.load_url(model_urls['alexnet']))
     return model
 
-class LfwNet(nn.Module):
 
+class LfwNet(nn.Module):
     def __init__(self):
         super(LfwNet, self).__init__()
         self.features = nn.Sequential(
@@ -89,12 +100,12 @@ class LfwNet(nn.Module):
         )
         self.classifier = nn.Sequential(
             nn.Dropout(),
-            nn.Linear(256 * 6 * 6, 512),
+            nn.Linear(256 * 6 * 6, 1024),
             nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(512, 256),
+            nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(256, 7 * 2),
+            nn.Linear(512, 14),
         )
 
     def forward(self, x):
@@ -118,7 +129,9 @@ class LFWDataset(Dataset):
         item = self.data_list[idx]
         # split data from the dictionary into class variables
         file_name = item['file_path']
+        # print(file_name)
         self.file_path = os.path.join(lfw_dataset_path, file_name[:self.dir_name_trim_length], file_name)
+        # print(self.file_path)
         self.crops = np.asarray(item['crops'])
         self.crops = self.crops.astype(int)
         self.landmarks = np.asarray(item['landmarks'])
@@ -126,7 +139,7 @@ class LFWDataset(Dataset):
         self.aug_types = item['aug_types']
         self.aug_type_list = list(self.aug_types)
         # open image from the file path
-        orig_img = Image.open(file_path)
+        orig_img = Image.open(self.file_path)
 
         # prepare image based on input augmentation type
 
@@ -137,9 +150,13 @@ class LFWDataset(Dataset):
         if self.aug_type_list[1] == '1':
             img, landmarks = self.flip(img, landmarks)
 
+        # print(landmarks)
+
         # brighten the image based on condition
         if self.aug_type_list[2] == '1':
             img = self.brighten(img)
+
+        # self.preview(img, landmarks)
 
         # normalise the image and landmarks
         img, landmarks = self.normalise(img, landmarks)
@@ -149,8 +166,12 @@ class LFWDataset(Dataset):
         img_tensor = torch.Tensor(img.astype(float))
         img_tensor = img_tensor.view((img.shape[2], img.shape[0], img.shape[1]))
         landmark_tensors = torch.Tensor(landmarks)
+        #print(landmark_tensors.shape[0])
 
-        # 225 x 225 x 3 input image tensor. 7 * 2 landmark tensor.
+        # print("done")
+
+
+        # 225 x 225 x 3 input image tensor. 14 landmark tensor.
 
         return img_tensor, landmark_tensors
 
@@ -159,17 +180,18 @@ class LFWDataset(Dataset):
         if self.aug_type_list[0] == '1':
             # randomly add  a number between -5 and 5 to the crop co-ordinates
             for index in range(0, len(self.crops)):
-                rand_offset = randint(-5, 5)
+                rand_offset = randint(-1, 1)
                 crops_offset[index] = self.crops[index] + rand_offset
         else:
             crops_offset = self.crops
 
         # crop the image
-        img = img.crop((crops_offset))
+        img = input_img.crop((crops_offset))
         # change landmark co-ordinates by subtracting cropped length from the landmark in each dimension
+        landmarks_offset = np.zeros(2, dtype=np.float32)
         landmarks_offset = [crops_offset[0], crops_offset[1]]
         landmarks_offset = np.tile(landmarks_offset, 7)
-        cropped_landmarks = landmarks - landmarks_offset
+        cropped_landmarks = self.landmarks - landmarks_offset
         # resize the image to (225,225) which is the input image size to alexnet
         w, h = img.size
         # find the image size ratio to 225 so that same ratio can be applies to landmark co-ordinates
@@ -185,12 +207,12 @@ class LFWDataset(Dataset):
         # flip the image
         img = input_img.transpose(Image.FLIP_LEFT_RIGHT)
         # flip the x co-ordinates in the landmarks list
-        flipped_landmarks = np.zeros(len(landmarks), dtype=np.float32)
-        for index in range(0, len(landmarks)):
+        flipped_landmarks = np.zeros(len(self.landmarks), dtype=np.float32)
+        for index in range(0, len(self.landmarks)):
             if index % 2 == 0:
-                flipped_landmarks[index] = 225.0 - landmarks[index]
+                flipped_landmarks[index] = 225.0 - input_landmarks[index]
             else:
-                flipped_landmarks[index] = landmarks[index]
+                flipped_landmarks[index] = input_landmarks[index]
 
         # tranform the landmark co ordinates to keep the co-ordinates side consistensy
         transformed_landmarks = np.zeros(14, dtype=np.float32)
@@ -231,198 +253,181 @@ class LFWDataset(Dataset):
     def denormalize(self, input_img, input_landmarks):
         # Denormalize the image.
         dn_img = np.array(input_img, dtype=float)
-        if input_img.shape[0] == 3:
-            input_img = (input_img + 1) / 2 * 255
-            return input_img.astype(int)
+        if dn_img.shape[0] == 3:
+            dn_img = (dn_img + 1) / 2 * 255
+            return dn_img.astype(int)
 
         # Denormalize the landmarks.
         return input_landmarks * self.img_w
 
-    def preview(self, idx=-1, is_landmarks_displayed=True):
-        if idx == -1:
-            idx = random.randint(0, len(self))
+    def preview(self, image, landmarks):
 
-        target = self[idx]
-        image, landmarks = self.denormalize(target[0], target[1])
-        print('Image tensor shape (C, H, W):', image.shape)
-        print('Label tensor shape (X, Y):', landmarks.shape)
-
-        channels = image.shape[0]
-        h, w = image.shape[1], image.shape[2]
+        # image, landmarks = self.denormalize(image_tensor, landmark_tensor)
 
         plt.figure(num='Preview')
-        plt.imshow(image.reshape(h, w, channels))
+        plt.imshow(image)
 
-        if is_landmarks_displayed:
-            plt.scatter(x=landmarks[0], y=landmarks[1], c='r', s=10)
-            plt.scatter(x=landmarks[2], y=landmarks[3], c='b', s=10)
-            plt.scatter(x=landmarks[4], y=landmarks[5], c='g', s=10)
-            plt.scatter(x=landmarks[6], y=landmarks[7], c='c', s=10)
-            plt.scatter(x=landmarks[8], y=landmarks[9], c='m', s=10)
-            plt.scatter(x=landmarks[10], y=landmarks[11], c='y', s=10)
-            plt.scatter(x=landmarks[12], y=landmarks[13], c='k', s=10)
-
+        plt.scatter(x=landmarks[0], y=landmarks[1], c='r', s=10)
+        plt.scatter(x=landmarks[2], y=landmarks[3], c='b', s=10)
+        plt.scatter(x=landmarks[4], y=landmarks[5], c='g', s=10)
+        plt.scatter(x=landmarks[6], y=landmarks[7], c='c', s=10)
+        plt.scatter(x=landmarks[8], y=landmarks[9], c='m', s=10)
+        plt.scatter(x=landmarks[10], y=landmarks[11], c='y', s=10)
+        plt.scatter(x=landmarks[12], y=landmarks[13], c='k', s=10)
         plt.xlim(0, 225)
         plt.ylim(225, 0)
-        plt.title('Preview at Index [' + str(idx) + ']')
-        plt.draw()
+        plt.show()
 
-
-# make a data set . extract file paths and landmark feature cordonates from LFW train annotations
-train_data_list = []
-lfw_dataset_path = '/home/vishnusanjay/PycharmProjects/FacialReg/lfw/'
-test_landmark_path = os.path.join(lfw_dataset_path, 'LFW_annotation_test.txt')
-train_landmark_path = os.path.join(lfw_dataset_path, 'LFW_annotation_train.txt')
-training_ratio = 0.8
-aug_types = ['001', '010', '100', '011', '101', '110', '111']  # nnn - random crop , flip,brightness
-
-training_validation_data_list = []
-testing_data_list = []
 
 # Read training and validation data.
-with open(train_landmark_path, "r") as file:
-    for line in file:
-        # split at tabs to get file name , borderbox co-ordinates , landmark feature co-ordinates
-        tokens = line.split('\t')
-        if len(tokens) == 3:
-            file_path = tokens[0]
-            crops = tokens[1].split()
-            landmarks = tokens[2].split()
-            training_validation_data_list.append(
-                {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'aug_types': '000'})
-            # random number of augmented images of original images
-            # augtype 000 indicates original image
-            random.shuffle(aug_types)
-            max_augs = randint(3, 7)
-            itr = 0
-            for idx in aug_types:
+
+
+def main():
+    with open(train_landmark_path, "r") as file:
+        for line in file:
+            # split at tabs to get file name , borderbox co-ordinates , landmark feature co-ordinates
+            tokens = line.split('\t')
+            if len(tokens) == 3:
+                file_path = tokens[0]
+                crops = tokens[1].split()
+                landmarks = tokens[2].split()
                 training_validation_data_list.append(
-                    {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'aug_types': idx})
-                itr = itr + 1
-                if itr == max_augs:
-                    break
+                    {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'aug_types': '000'})
+                # random number of augmented images of original images
+                # augtype 000 indicates original image
+                random.shuffle(aug_types)
+                max_augs = 5
+                itr = 0
+                for idx in aug_types:
+                    training_validation_data_list.append(
+                        {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'aug_types': idx})
+                    itr = itr + 1
+                    if itr == max_augs:
+                        break
 
-# Read test data
-with open(test_landmark_path, "r") as file:
-    for line in file:
-        # split at tabs to get file name , borderbox co-ordinates , landmark feature co-ordinates
-        tokens = line.split('\t')
-        if len(tokens) == 3:
-            file_path = tokens[0]
-            crops = tokens[1].split()
-            landmarks = tokens[2].split()
-            testing_data_list.append(
-                {'file_path': file_path, 'crops': crops, 'landmarks': landmarks, 'aug_types': '000'})
+                        # Read test data
 
-random.shuffle(training_validation_data_list)
-random.shuffle(testing_data_list)
-total_training_validation_items = len(training_validation_data_list)
 
-# Training dataset.
-n_train_sets = training_ratio * total_training_validation_items
-train_set_list = training_validation_data_list[: int(n_train_sets)]
+    random.shuffle(training_validation_data_list)
+    random.shuffle(testing_data_list)
+    total_training_validation_items = len(training_validation_data_list)
 
-# Validation dataset.
-n_valid_sets = (1 - training_ratio) * total_training_validation_items
-valid_set_list = training_validation_data_list[int(n_train_sets): int(n_train_sets + n_valid_sets)]
+    # Training dataset.
+    n_train_sets = training_ratio * total_training_validation_items
+    train_set_list = training_validation_data_list[: int(n_train_sets)]
 
-# Testing dataset.
-test_set_list = testing_data_list
+    # Validation dataset.
+    n_valid_sets = (1 - training_ratio) * total_training_validation_items
+    valid_set_list = training_validation_data_list[int(n_train_sets): int(n_train_sets + n_valid_sets)]
 
-train_dataset = LFWDataset(train_set_list)
-train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=6)
-print('Total training items', len(train_dataset), ', Total training batches per epoch:', len(train_data_loader))
+    # Testing dataset.
+    test_set_list = testing_data_list
 
-valid_set = LFWDataset(valid_set_list)
-valid_data_loader = torch.utils.data.DataLoader(valid_set, batch_size=32, shuffle=True, num_workers=6)
-print('Total validation set:', len(valid_set))
+    train_dataset = LFWDataset(train_set_list)
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=0)
+    print('Total training items', len(train_dataset), ', Total training batches per epoch:', len(train_data_loader))
 
-# Prepare pretrained model.
-alex_net = alexnet(pretrained=True)
-lfw_net = LfwNet()
-alex_dict = alex_net.state_dict()
-lfw_dict = lfw_net.state_dict()
+    valid_set = LFWDataset(valid_set_list)
+    valid_data_loader = torch.utils.data.DataLoader(valid_set, batch_size=32, shuffle=True, num_workers=0)
+    print('Total validation set:', len(valid_set))
 
-# Remove FC layers from pretrained model.
-alex_dict.pop('classifier.1.weight')
-alex_dict.pop('classifier.1.bias')
-alex_dict.pop('classifier.4.weight')
-alex_dict.pop('classifier.4.bias')
-alex_dict.pop('classifier.6.weight')
-alex_dict.pop('classifier.6.bias')
+    # Prepare pretrained model.
+    alex_net = alexnet(pretrained=True)
+    lfw_net = LfwNet()
+    alex_dict = alex_net.state_dict()
+    lfw_dict = lfw_net.state_dict()
 
-# Load lfw model with pretrained data.
-lfw_dict.update(alex_dict)
-lfw_net.load_state_dict(lfw_dict)
+    # Remove FC layers from pretrained model.
+    alex_dict.pop('classifier.1.weight')
+    alex_dict.pop('classifier.1.bias')
+    alex_dict.pop('classifier.4.weight')
+    alex_dict.pop('classifier.4.bias')
+    alex_dict.pop('classifier.6.weight')
+    alex_dict.pop('classifier.6.bias')
 
-# Losses collection, used for monitoring over-fit
-train_losses = []
-valid_losses = []
+    # Load lfw model with pretrained data.
+    lfw_dict.update(alex_dict)
+    lfw_net.load_state_dict(lfw_dict)
 
-max_epochs = 6
-itr = 0
-optimizer = torch.optim.Adam(lfw_net.parameters(), lr=learning_rate)
-criterion = torch.nn.MSELoss()
+    # Losses collection, used for monitoring over-fit
+    train_losses = []
+    valid_losses = []
 
-for epoch_idx in range(0, max_epochs):
-    for train_batch_idx, (train_input, train_oracle) in enumerate(train_data_loader):
-        itr += 1
-        lfw_net.train()
+    max_epochs = 6
+    itr = 0
+    optimizer = torch.optim.Adam(lfw_net.parameters(), lr=learning_rate)
+    criterion = torch.nn.MSELoss()
 
-        # Zero the parameter gradients
-        optimizer.zero_grad()
+    print(lfw_net)
 
-        # Forward
-        train_input = Variable(train_input.cuda())  # Use Variable(*) to allow gradient flow
-        train_out = lfw_net.forward(train_input)  # Forward once
+    for param in lfw_net.features.parameters():
+        param.requires_grad = False
 
-        # Compute loss
-        train_oracle = Variable(train_oracle.cuda())
-        loss = criterion(train_out, train_oracle)
 
-        # Do the backward and compute gradients
-        loss.backward()
+    print("start train")
 
-        # Update the parameters with SGD
-        optimizer.step()
+    for epoch_idx in range(0, max_epochs):
+        for train_batch_idx, (train_input, train_oracle) in enumerate(train_data_loader):
+            itr += 1
+            lfw_net.train()
 
-        train_losses.append((itr, loss.item()))
+            # Zero the parameter gradients
+            optimizer.zero_grad()
 
-        if train_batch_idx % 200 == 0:
-            print('Epoch: %d Itr: %d Loss: %f' % (epoch_idx, itr, loss.item()))
+            # Forward
+            train_input = Variable(train_input.cuda())  # Use Variable(*) to allow gradient flow
+            train_out = lfw_net.forward(train_input)  # Forward once
 
-            # Run the validation every 200 iteration:
-        if train_batch_idx % 50 == 0:
-            lfw_net.eval()  # [Important!] set the network in evaluation model
-            valid_loss_set = []  # collect the validation losses
-            valid_itr = 0
+            # Compute loss
+            train_oracle = Variable(train_oracle.cuda())
+            loss = criterion(train_out, train_oracle)
 
-            # Do validation
-            for valid_batch_idx, (valid_input, valid_label) in enumerate(valid_data_loader):
-                lfw_net.eval()
-                valid_input = Variable(valid_input.cuda())  # use Variable(*) to allow gradient flow
-                valid_out = lfw_net.forward(valid_input)  # forward once
+            # Do the backward and compute gradients
+            loss.backward()
 
-                # Compute loss
-                valid_label = Variable(valid_label.cuda())
-                valid_loss = criterion(valid_out, valid_label)
-                valid_loss_set.append(valid_loss.item())
+            # Update the parameters with SGD
+            optimizer.step()
 
-                # We just need to test 5 validation mini-batchs
-                valid_itr += 1
-                if valid_itr > 5:
-                    break
+            train_losses.append((itr, loss.item()))
 
-            # Compute the avg. validation loss
-            avg_valid_loss = np.mean(np.asarray(valid_loss_set))
-            print('Valid Epoch: %d Itr: %d Loss: %f' % (epoch_idx, itr, float(avg_valid_loss)))
-            valid_losses.append((itr, avg_valid_loss))
+            if train_batch_idx % 200 == 0:
+                print('Epoch: %d Itr: %d Loss: %f' % (epoch_idx, itr, loss.item()))
 
-train_losses = np.asarray(train_losses)
-valid_losses = np.asarray(valid_losses)
+                # Run the validation every 200 iteration:
+            if train_batch_idx % 50 == 0:
+                lfw_net.eval()  # [Important!] set the network in evaluation model
+                valid_loss_set = []  # collect the validation losses
+                valid_itr = 0
 
-plt.plot(train_losses[:, 0],  # Iteration
-         train_losses[:, 1])  # Loss value
-plt.plot(valid_losses[:, 0],  # Iteration
-         valid_losses[:, 1])  # Loss value
-plt.show()
+                # Do validation
+                for valid_batch_idx, (valid_input, valid_label) in enumerate(valid_data_loader):
+                    lfw_net.eval()
+                    valid_input = Variable(valid_input.cuda())  # use Variable(*) to allow gradient flow
+                    valid_out = lfw_net.forward(valid_input)  # forward once
+
+                    # Compute loss
+                    valid_label = Variable(valid_label.cuda())
+                    valid_loss = criterion(valid_out, valid_label)
+                    valid_loss_set.append(valid_loss.item())
+
+                # Compute the avg. validation loss
+                avg_valid_loss = np.mean(np.asarray(valid_loss_set))
+                print('Valid Epoch: %d Itr: %d Loss: %f' % (epoch_idx, itr, float(avg_valid_loss)))
+                valid_losses.append((itr, avg_valid_loss))
+
+    train_losses = np.asarray(train_losses)
+    valid_losses = np.asarray(valid_losses)
+    train_losses[0] =train_losses[1]
+    valid_losses[0] =valid_losses[1]
+
+    plt.plot(train_losses[:, 0],  # Iteration
+             train_losses[:, 1])  # Loss value
+    plt.plot(valid_losses[:, 0],  # Iteration
+             valid_losses[:, 1])  # Loss value
+    plt.show()
+    net_state = lfw_net.state_dict()  # serialize trained model
+    torch.save(net_state, os.path.join(lfw_dataset_path, 'lfwnet.pth'))  # save to disk
+
+
+if __name__ == '__main__':
+    main()
