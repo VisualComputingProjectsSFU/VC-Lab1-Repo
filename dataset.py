@@ -9,9 +9,10 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import main
 
+img_w, img_h = 225, 225
+
 
 class AlexNetDataset(Dataset):
-    img_w, img_h = 225, 225
     dir_name_trim_length = -9
     random_crop_ratio = 0.15
     random_brighten_ratio = 0.8
@@ -68,14 +69,16 @@ class AlexNetDataset(Dataset):
             shift = random.uniform(0, shift)
             shift *= [-1, 1][random.randrange(2)]
             shift_coordinates[1] = shift
-            self.crops += np.tile(shift_coordinates, int(len(self.crops) / 2))
+            repeat = list()
+            repeat.append(int(len(self.crops) / 2))
+            self.crops += np.tile(shift_coordinates, repeat[0])
             self._is_crop_updated = True
 
         # Case that a image need to be cropped.
         if isinstance(_input, PIL.JpegImagePlugin.JpegImageFile):
             img = _input
             img = img.crop(self.crops)
-            img = img.resize((self.img_w, self.img_h), PIL.Image.ANTIALIAS)
+            img = img.resize((img_w, img_h), PIL.Image.ANTIALIAS)
 
             return np.asarray(img)
 
@@ -83,7 +86,7 @@ class AlexNetDataset(Dataset):
         landmarks = _input
         shift = np.array([[self.crops[0], self.crops[1]]])
         shift = np.repeat(shift, 7, axis=0)
-        ratio = float(self.img_w) / (self.crops[2] - self.crops[0])
+        ratio = float(img_w) / (self.crops[2] - self.crops[0])
         return np.subtract(landmarks, shift) * ratio
 
     def flip(self, _input):
@@ -94,19 +97,19 @@ class AlexNetDataset(Dataset):
         # Flip the landmarks.
         if self.augmentation[1] == '1':
             new_landmarks = np.ndarray(shape=(7, 2), dtype=float)
-            new_landmarks[0][0] = self.img_w - _input[3][0]
+            new_landmarks[0][0] = img_w - _input[3][0]
             new_landmarks[0][1] = _input[3][1]
-            new_landmarks[1][0] = self.img_w - _input[2][0]
+            new_landmarks[1][0] = img_w - _input[2][0]
             new_landmarks[1][1] = _input[2][1]
-            new_landmarks[2][0] = self.img_w - _input[1][0]
+            new_landmarks[2][0] = img_w - _input[1][0]
             new_landmarks[2][1] = _input[1][1]
-            new_landmarks[3][0] = self.img_w - _input[0][0]
+            new_landmarks[3][0] = img_w - _input[0][0]
             new_landmarks[3][1] = _input[0][1]
-            new_landmarks[4][0] = self.img_w - _input[5][0]
+            new_landmarks[4][0] = img_w - _input[5][0]
             new_landmarks[4][1] = _input[5][1]
-            new_landmarks[5][0] = self.img_w - _input[4][0]
+            new_landmarks[5][0] = img_w - _input[4][0]
             new_landmarks[5][1] = _input[4][1]
-            new_landmarks[6][0] = self.img_w - _input[6][0]
+            new_landmarks[6][0] = img_w - _input[6][0]
             new_landmarks[6][1] = _input[6][1]
             return new_landmarks
         return _input
@@ -114,11 +117,12 @@ class AlexNetDataset(Dataset):
     def brighten(self, cropped_img):
         if self.augmentation[2] == '1':
             sign = [-1, 1][random.randrange(2)]
-            img = cropped_img * (1 + sign * (random.uniform(0, self.random_brighten_ratio)))
+            img = np.multiply(cropped_img, (1 + sign * (random.uniform(0, self.random_brighten_ratio))))
             return img.clip(0, 255)
         return cropped_img
 
-    def normalize(self, _input):
+    @staticmethod
+    def normalize(_input):
         # Normalize the image.
         if _input.shape == (225, 225, 3):
             img = np.array(_input, dtype=float)
@@ -127,10 +131,11 @@ class AlexNetDataset(Dataset):
 
         # Normalize the landmarks.
         landmarks = np.array(_input, dtype=float)
-        landmarks = landmarks / self.img_w
+        landmarks /= img_w
         return landmarks
 
-    def denormalize(self, _input):
+    @staticmethod
+    def denormalize(_input):
         # Denormalize the image.
         _input = np.array(_input, dtype=float)
         if _input.shape[0] == 3:
@@ -138,7 +143,7 @@ class AlexNetDataset(Dataset):
             return _input.astype(int)
 
         # Denormalize the landmarks.
-        return _input * self.img_w
+        return _input * img_w
 
     def preview(self, idx=-1, is_landmarks_displayed=True):
         if idx == -1:
@@ -147,7 +152,7 @@ class AlexNetDataset(Dataset):
         target = self[idx]
         image = self.denormalize(target[0])
         landmarks = target[1]
-        landmarks = self.denormalize(landmarks)
+        landmarks = self.denormalize(np.array(landmarks))
         print('Image tensor shape (C, H, W):', image.shape)
         print('Label tensor shape (X, Y):', landmarks.shape)
 
@@ -158,13 +163,19 @@ class AlexNetDataset(Dataset):
         plt.imshow(image.reshape(h, w, channels))
 
         if is_landmarks_displayed:
-            plt.plot(landmarks[0][0], landmarks[0][1], 'ro')
-            plt.plot(landmarks[1][0], landmarks[1][1], 'bo')
-            plt.plot(landmarks[2][0], landmarks[2][1], 'ro')
-            plt.plot(landmarks[3][0], landmarks[3][1], 'bo')
-            plt.plot(landmarks[4][0], landmarks[4][1], 'ro')
-            plt.plot(landmarks[5][0], landmarks[5][1], 'bo')
-            plt.plot(landmarks[6][0], landmarks[6][1], 'go')
+            marker_size = 10
+            r_dot, = plt.plot(landmarks[0][0], landmarks[0][1], 'ro', markersize=marker_size)
+            b_dot, = plt.plot(landmarks[1][0], landmarks[1][1], 'bo', markersize=marker_size)
+            plt.plot(landmarks[2][0], landmarks[2][1], 'ro', markersize=marker_size)
+            plt.plot(landmarks[3][0], landmarks[3][1], 'bo', markersize=marker_size)
+            plt.plot(landmarks[4][0], landmarks[4][1], 'ro', markersize=marker_size)
+            plt.plot(landmarks[5][0], landmarks[5][1], 'bo', markersize=marker_size)
+            g_dot, = plt.plot(landmarks[6][0], landmarks[6][1], 'go', markersize=marker_size)
+
+            plt.legend([r_dot, b_dot, g_dot],
+                       ['Left Dot', 'Right Dot', 'Nose Dot'],
+                       bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+            plt.tight_layout()
 
         plt.xlim(0, 225)
         plt.ylim(225, 0)
