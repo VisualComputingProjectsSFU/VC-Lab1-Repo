@@ -13,6 +13,7 @@ from random import randint
 from torch.autograd import Variable
 
 n_detection_range = 100
+n_size = 128
 
 if __name__ == '__main__':
     lfw_dataset_path = '/home/vishnusanjay/PycharmProjects/FacialReg/lfw'
@@ -36,7 +37,7 @@ if __name__ == '__main__':
     test_set_list = testing_data_list
 
     test_dataset = dataset.LFWDataset(test_set_list)
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=True, num_workers=0)
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=0)
     print('Total teting items', len(test_dataset), ', Total training batches per epoch:', len(test_data_loader))
 
     test_net = LFWNet.LfwNet()
@@ -52,25 +53,36 @@ if __name__ == '__main__':
         test_net.cuda()
         predictions = test_net.forward(test_input.cuda())
 
+
+
         # Compute overall loss.
-        batch_loss = np.linalg.norm(np.array(predictions.detach()) - np.array(test_oracle.detach()), axis=1)
-        print(np.array(predictions.detach()).shape)
-        print(np.array(test_oracle.detach()).shape)
-        print(batch_loss.shape)
+        pred_array = np.array(predictions.detach())
+        pred_array = pred_array.reshape(7,2)
+
+        #print(pred_array*225)
+        test_array = np.array(test_oracle.detach())
+        test_array = test_array.reshape(7,2)
+        #print(test_array * 225)
+        batch_loss = np.linalg.norm(pred_array-test_array, axis=1)
+        #print(np.array(predictions.detach()).shape)
+        #print(np.array(test_oracle.detach()).shape)
+        #print(batch_loss*225)
         batch_loss *= 225
         loss_raw.extend(batch_loss.tolist())
+       # print(loss_raw.shape)
+
 
 
 
     # Compute loss plot.
     loss_raw = np.array(loss_raw).flatten()
-    print(loss_raw.shape)
+    #print(loss_raw.shape)
     loss_plot = []
     for step in range(1, n_detection_range):
         loss_plot.append((step, len(np.where(loss_raw < step)[0]) / float(len(loss_raw))))
-        print(len(np.where(loss_raw < step)[0]))
-        print(len(loss_raw))
-        print(len(np.where(loss_raw < step)[0]) / len(loss_raw))
+        #print(len(np.where(loss_raw < step)[0]))
+        #print(len(loss_raw))
+        #print(len(np.where(loss_raw < step)[0]) / len(loss_raw))
     loss_plot = np.asarray(loss_plot,dtype=np.float32)
     print(loss_plot)
     plt.figure(num='Percentage of Detected Key-points')
@@ -86,3 +98,4 @@ if __name__ == '__main__':
     plt.plot(loss_plot[:, 0], loss_plot[:, 1])
 
     plt.show()
+
